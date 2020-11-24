@@ -12,17 +12,19 @@
 import json
 import os
 
-import tests.pcluster.config.utils as utils
 from assertpy import assert_that
-from pcluster.config.mappings import ALIASES, AWS, CLUSTER, EBS, EFS, FSX, GLOBAL, RAID, SCALING, VPC
-from pcluster.config.pcluster_config import PclusterConfig
-from tests.pcluster.config.defaults import CFN_CLI_RESERVED_PARAMS, CFN_CONFIG_NUM_OF_PARAMS, DefaultCfnParams
 
-EXISTING_SECTIONS = [ALIASES, AWS, CLUSTER, EBS, EFS, FSX, GLOBAL, RAID, SCALING, VPC]
+import tests.pcluster.config.utils as utils
+from pcluster.config.mappings import ALIASES, AWS, CLUSTER_SIT, CW_LOG, DCV, EBS, EFS, FSX, GLOBAL, RAID, SCALING, VPC
+from pcluster.config.pcluster_config import PclusterConfig
+from tests.pcluster.config.defaults import CFN_CLI_RESERVED_PARAMS, CFN_SIT_CONFIG_NUM_OF_PARAMS, DefaultCfnParams
+
+EXISTING_SECTIONS = [ALIASES, AWS, CLUSTER_SIT, CW_LOG, DCV, EBS, EFS, FSX, GLOBAL, RAID, SCALING, VPC]
 
 
 def test_mapping_consistency():
     """Verify for typos or wrong keys in the mappings.py file."""
+    # TODO: use jsonschema to validate mappings dict.
     for section_definition in EXISTING_SECTIONS:
         for section_key, _ in section_definition.items():
             assert_that(
@@ -30,30 +32,54 @@ def test_mapping_consistency():
                 description="{0} is not allowed in {1} section definition".format(
                     section_key, section_definition.get("key")
                 ),
-            ).is_in("type", "key", "default_label", "cfn_param_mapping", "params", "validators")
+            ).is_in(
+                "type",
+                "key",
+                "default_label",
+                "autocreate",
+                "cfn_param_mapping",
+                "params",
+                "validators",
+                "max_resources",
+                "cluster_model",
+            )
 
         for param_key, param_definition in section_definition.get("params").items():
+
             for param_definition_key, _ in param_definition.items():
                 assert_that(
                     param_definition_key,
                     description="{0} is not allowed in {1} param definition".format(param_definition_key, param_key),
-                ).is_in("type", "cfn_param_mapping", "allowed_values", "validators", "default", "referred_section")
+                ).is_in(
+                    "type",
+                    "cfn_param_mapping",
+                    "allowed_values",
+                    "validators",
+                    "default",
+                    "referred_section",
+                    "update_policy",
+                    "required",
+                    "visibility",
+                )
+                # Update policy must be always specified
+                assert_that(
+                    param_definition.get("update_policy"),
+                    description="Missing update policy for parameter '{0}'".format(param_key),
+                ).is_not_none()
 
 
 def test_example_config_consistency(mocker):
     """Validate example file and try to convert to CFN."""
-    # mock validation to avoid boto3 calls required at validation stage
-    mocker.patch.object(PclusterConfig, "_PclusterConfig__validate")
-    mocker.patch("pcluster.config.param_types.get_avail_zone", return_value="mocked_avail_zone")
-    pcluster_config = PclusterConfig(
-        config_file=utils.get_pcluster_config_example(),
-        file_sections=[GLOBAL, CLUSTER, ALIASES],
-        fail_on_file_absence=True,
+    mocker.patch("pcluster.config.cfn_param_types.get_availability_zone_of_subnet", return_value="mocked_avail_zone")
+    mocker.patch(
+        "pcluster.config.cfn_param_types.get_supported_architectures_for_instance_type", return_value=["x86_64"]
     )
+    mocker.patch("pcluster.config.cfn_param_types.get_instance_network_interfaces", return_value=1)
+    pcluster_config = PclusterConfig(config_file=utils.get_pcluster_config_example(), fail_on_file_absence=True)
 
     cfn_params = pcluster_config.to_cfn()
 
-    assert_that(len(cfn_params)).is_equal_to(CFN_CONFIG_NUM_OF_PARAMS)
+    assert_that(len(cfn_params)).is_equal_to(utils.get_cfn_config_num_of_params(pcluster_config))
 
     # for param_key, param_value in expected_cfn_params.items():
     # assert_that(cfn_params.get(param_key)).is_equal_to(expected_cfn_params.get(param_key))
@@ -63,13 +89,22 @@ def test_defaults_consistency():
     """Verifies that the defaults values for the CFN parameters used in the tests are the same in the CFN template."""
     template_num_of_params = _get_pcluster_cfn_num_of_params()
 
-    # verify that the number of parameters in the template is lower than the limit of 60 parameters
+    # verify that the number of parameters in the template is lower than the limit of 200 parameters
     # https://docs.aws.amazon.com/en_us/AWSCloudFormation/latest/UserGuide/parameters-section-structure.html
-    assert_that(template_num_of_params).is_less_than_or_equal_to(60)
+    assert_that(template_num_of_params).is_less_than_or_equal_to(200)
 
     # verify number of parameters used for tests with number of parameters in CFN template
-    total_number_of_params = CFN_CONFIG_NUM_OF_PARAMS + len(CFN_CLI_RESERVED_PARAMS)
+    total_number_of_params = CFN_SIT_CONFIG_NUM_OF_PARAMS + len(CFN_CLI_RESERVED_PARAMS)
     assert_that(total_number_of_params).is_equal_to(template_num_of_params)
+
+    # The EC2IAMPoicies parameter is expected to differ by default from the default value in the
+    # CFN template. This is because CloudWatch logging is enabled by default, and the appropriate
+    # policy is added to this parameter in a transparent fashion.
+    ignored_params = CFN_CLI_RESERVED_PARAMS + ["EC2IAMPolicies"]
+
+    # ClusterConfigMetadata parameter is expected to differ from the default value in the CFN template because config
+    # metadata is generated dynamically based on user's configuration.
+    ignored_params += ["ClusterConfigMetadata"]
 
     cfn_params = [section_cfn_params.value for section_cfn_params in DefaultCfnParams]
     default_cfn_values = utils.merge_dicts(*cfn_params)
@@ -77,7 +112,7 @@ def test_defaults_consistency():
     # verify default parameter values used for tests with default values in CFN template
     pcluster_cfn_json = _get_pcluster_cfn_json()
     for param_key, param in pcluster_cfn_json["Parameters"].items():
-        if param_key not in CFN_CLI_RESERVED_PARAMS:
+        if param_key not in ignored_params:
             default_value = param.get("Default", None)
             if default_value:
                 assert_that(default_value, description=param_key).is_equal_to(default_cfn_values.get(param_key, None))

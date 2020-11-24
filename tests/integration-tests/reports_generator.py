@@ -12,28 +12,34 @@
 import datetime
 import json
 import os
-import re
 import time
 
 import boto3
+import untangle
 from junitparser import JUnitXml
 
-import untangle
 
-
-def generate_cw_report(test_results_dir, namespace, aws_region):
+def generate_cw_report(test_results_dir, namespace, aws_region, timestamp_day_start=False, start_timestamp=None):
     """
     Publish tests results to CloudWatch
     :param test_results_dir: dir containing the tests outputs.
     :param namespace: namespace for the CW metric.
     :param aws_region: region where to push the metric.
+    :param timestamp_day_start: timestamp of the CW metric equal to the start of the current day (midnight).
+    :param start_timestamp: timestamp value to use instead of generating one
     """
     test_report_file = os.path.join(test_results_dir, "test_report.xml")
     if not os.path.isfile(test_report_file):
         generate_junitxml_merged_report(test_results_dir)
     report = generate_json_report(test_results_dir=test_results_dir, save_to_file=False)
     cw_client = boto3.client("cloudwatch", region_name=aws_region)
-    timestamp = datetime.datetime.utcnow()
+
+    if start_timestamp is not None:
+        timestamp = datetime.datetime.fromtimestamp(start_timestamp)
+    elif timestamp_day_start:
+        timestamp = datetime.datetime.combine(datetime.datetime.utcnow(), datetime.time())
+    else:
+        timestamp = datetime.datetime.utcnow()
 
     for key, value in report.items():
         if key == "all":
@@ -49,14 +55,11 @@ def generate_junitxml_merged_report(test_results_dir):
     Merge all junitxml generated reports in a single one.
     :param test_results_dir: output dir containing the junitxml reports to merge.
     """
-    merged_xml = None
+    merged_xml = JUnitXml()
     for dir, _, files in os.walk(test_results_dir):
         for file in files:
             if file.endswith("results.xml"):
-                if not merged_xml:
-                    merged_xml = JUnitXml.fromfile(os.path.join(dir, file))
-                else:
-                    merged_xml += JUnitXml.fromfile(os.path.join(dir, file))
+                merged_xml += JUnitXml.fromfile(os.path.join(dir, file))
 
     merged_xml.write("{0}/test_report.xml".format(test_results_dir), pretty=True)
 
@@ -89,9 +92,6 @@ def generate_json_report(test_results_dir, save_to_file=True):
             if hasattr(testcase, "properties"):
                 for property in testcase.properties.children:
                     _record_result(results, property["name"], property["value"], label)
-
-            feature = re.sub(r"test_|_test|.py", "", os.path.splitext(os.path.basename(testcase["file"]))[0])
-            _record_result(results, "feature", feature, label)
 
     if save_to_file:
         with open("{0}/test_report.json".format(test_results_dir), "w") as out_f:

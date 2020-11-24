@@ -2,42 +2,51 @@ import logging
 import pathlib
 
 from assertpy import assert_that
+
 from tests.common.assertions import assert_no_errors_in_logs, assert_scaling_worked
 from tests.common.schedulers_common import get_scheduler_commands
 
-OS_TO_OPENMPI_MODULE_MAP = {
-    "alinux": "openmpi",
-    "centos7": "openmpi",
-    "ubuntu1604": "openmpi",
-    "centos6": "openmpi-x86_64",
-    "ubuntu1804": "openmpi",
-}
+MPI_COMMON_DATADIR = pathlib.Path(__file__).parent / "data/mpi/"
+
+
+def compile_mpi_ring(mpi_module, remote_command_executor, binary_path="ring"):
+    """
+    Copy the source for an MPI ring program to a running cluster and compile the program.
+
+    By default the resulting binary is written to ${HOME}/ring. This can be changed via the binary_path arg.
+    """
+    command = f"module load {mpi_module} && mpicc -o {binary_path} ring.c"
+    remote_command_executor.run_remote_command(command, additional_files=[str(MPI_COMMON_DATADIR / "ring.c")])
 
 
 def _test_mpi(
     remote_command_executor,
     slots_per_instance,
     scheduler,
-    os,
     region=None,
     stack_name=None,
     scaledown_idletime=None,
     verify_scaling=False,
+    partition=None,
 ):
     logging.info("Testing mpi job")
-    datadir = pathlib.Path(__file__).parent / "data/mpi/"
-    mpi_module = OS_TO_OPENMPI_MODULE_MAP[os]
+    mpi_module = "openmpi"
     # Compile mpi script
-    command = "mpicc -o mpi_hello_world mpi_hello_world.c"
-    if mpi_module != "no_module_available":
-        command = "module load {0} && {1}".format(mpi_module, command)
-    remote_command_executor.run_remote_command(command, additional_files=[str(datadir / "mpi_hello_world.c")])
+    compile_mpi_ring(mpi_module, remote_command_executor)
     scheduler_commands = get_scheduler_commands(scheduler, remote_command_executor)
 
-    # submit script using additional files
-    result = scheduler_commands.submit_script(
-        str(datadir / "mpi_submit_{0}.sh".format(mpi_module)), slots=2 * slots_per_instance
-    )
+    if partition:
+        # submit script using additional files
+        result = scheduler_commands.submit_script(
+            str(MPI_COMMON_DATADIR / "mpi_submit_{0}.sh".format(mpi_module)),
+            slots=2 * slots_per_instance,
+            partition=partition,
+        )
+    else:
+        # submit script using additional files
+        result = scheduler_commands.submit_script(
+            str(MPI_COMMON_DATADIR / "mpi_submit_{0}.sh".format(mpi_module)), slots=2 * slots_per_instance
+        )
     job_id = scheduler_commands.assert_job_submitted(result.stdout)
 
     if verify_scaling:
@@ -50,8 +59,27 @@ def _test_mpi(
         scheduler_commands.assert_job_succeeded(job_id)
 
     mpi_out = remote_command_executor.run_remote_command("cat /shared/mpi.out").stdout
-    assert_that(mpi_out.splitlines()).is_length(2)
-    assert_that(mpi_out).matches(r"Hello world from processor ip-.+, rank 0 out of 2 processors")
-    assert_that(mpi_out).matches(r"Hello world from processor ip-.+, rank 1 out of 2 processors")
+    # mpi_out expected output
+    # Hello world from processor ip-192-168-53-169, rank 0 out of 2 processors
+    # Process 0 received token -1 from process 1
+    # Hello world from processor ip-192-168-60-9, rank 1 out of 2 processors
+    # Process 1 received token -1 from process 0
+    assert_that(mpi_out.splitlines()).is_length(4)
+    # Slurm HIT DNS name is the same as nodename and starts with partition
+    # Example: efa-enabled-st-c5n18xlarge-2
+    if partition:
+        nodename_prefix = partition
+    elif scheduler == "slurm":
+        nodename_prefix = ""
+    else:
+        nodename_prefix = "ip-"
+    assert_that(mpi_out).matches(
+        r"Hello world from processor {0}.+, rank 0 out of 2 processors".format(nodename_prefix)
+    )
+    assert_that(mpi_out).matches(
+        r"Hello world from processor {0}.+, rank 1 out of 2 processors".format(nodename_prefix)
+    )
+    assert_that(mpi_out).contains("Process 0 received token -1 from process 1")
+    assert_that(mpi_out).contains("Process 1 received token -1 from process 0")
 
-    assert_no_errors_in_logs(remote_command_executor, ["/var/log/sqswatcher", "/var/log/jobwatcher"])
+    assert_no_errors_in_logs(remote_command_executor, scheduler)

@@ -34,6 +34,23 @@
         }
       ]
     },
+    "UseAutoImportPolicy": {
+      "Fn::Not": [
+        {
+          "Fn::Equals": [
+            {
+              "Fn::Select": [
+                "14",
+                {
+                  "Ref": "FSXOptions"
+                }
+              ]
+            },
+            "NONE"
+          ]
+        }
+      ]
+    },
     "UseExportPath": {
       "Fn::Not": [
         {
@@ -135,6 +152,138 @@
           ]
         }
       ]
+    },
+    "UseDeploymentType": {
+      "Fn::Not": [
+        {
+          "Fn::Equals": [
+            {
+              "Fn::Select": [
+                "8",
+                {
+                  "Ref": "FSXOptions"
+                }
+              ]
+            },
+            "NONE"
+          ]
+        }
+      ]
+    },
+    "UsePerUnitStorageThroughput": {
+      "Fn::Not": [
+        {
+          "Fn::Equals": [
+            {
+              "Fn::Select": [
+                "9",
+                {
+                  "Ref": "FSXOptions"
+                }
+              ]
+            },
+            "NONE"
+          ]
+        }
+      ]
+    },
+    "UseDailyAutomaticBackupStartTime": {
+      "Fn::Not": [
+        {
+          "Fn::Equals": [
+            {
+              "Fn::Select": [
+                "10",
+                {
+                  "Ref": "FSXOptions"
+                }
+              ]
+            },
+            "NONE"
+          ]
+        }
+      ]
+    },
+    "UseAutomaticBackupRetentionDays": {
+      "Fn::Not": [
+        {
+          "Fn::Equals": [
+            {
+              "Fn::Select": [
+                "11",
+                {
+                  "Ref": "FSXOptions"
+                }
+              ]
+            },
+            "NONE"
+          ]
+        }
+      ]
+    },
+    "UseCopyTagsToBackups": {
+      "Fn::Not": [
+        {
+          "Fn::Equals": [
+            {
+              "Fn::Select": [
+                "12",
+                {
+                  "Ref": "FSXOptions"
+                }
+              ]
+            },
+            "NONE"
+          ]
+        }
+      ]
+    },
+    "UseBackupId": {
+      "Fn::Not": [
+        {
+          "Fn::Equals": [
+            {
+              "Fn::Select": [
+                "13",
+                {
+                  "Ref": "FSXOptions"
+                }
+              ]
+            },
+            "NONE"
+          ]
+        }
+      ]
+    },
+    "UseStorageType": {
+      "Fn::Not": [
+        {
+          "Fn::Equals": [
+            {
+              "Fn::Select": [
+                "15",
+                {
+                  "Ref": "FSXOptions"
+                }
+              ]
+            },
+            "NONE"
+          ]
+        }
+      ]
+    },
+    "UseDriveCacheType": {
+      "Fn::Equals": [
+        {
+          "Fn::Select": [
+            "15",
+            {
+              "Ref": "FSXOptions"
+            }
+          ]
+        },
+        "HDD"
+      ]
     }
   },
   "Outputs": {
@@ -168,7 +317,7 @@
       "Type": "String"
     },
     "FSXOptions": {
-      "Description": "Comma separated list of fsx related options, 8 parameters in total, [shared_dir,fsx_fs_id,storage_capacity,fsx_kms_key_id,imported_file_chunk_size,export_path,import_path,weekly_maintenance_start_time]",
+      "Description": "Comma separated list of fsx related options, 17 parameters in total, [shared_dir,fsx_fs_id,storage_capacity,fsx_kms_key_id,imported_file_chunk_size,export_path,import_path,weekly_maintenance_start_time,deployment_type,per_unit_storage_throughput,daily_automatic_backup_start_time,automatic_backup_retention_days,copy_tags_to_backups,fsx_backup_id,auto_import_policy,storage_type,drive_cache_type]",
       "Type": "CommaDelimitedList"
     },
     "SubnetId": {
@@ -178,8 +327,33 @@
   },
   "Resources": {
     "FileSystem": {
+      "Metadata": {
+        "cfn-lint": {
+          "config": {
+            "ignore_checks": [
+              "E3002"
+            ]
+          }
+        }
+      },
       "Condition": "CreateFSX",
       "Properties": {
+        "StorageType": {
+          "Fn::If": [
+            "UseStorageType",
+            {
+              "Fn::Select": [
+                "15",
+                {
+                  "Ref": "FSXOptions"
+                }
+              ]
+            },
+            {
+              "Ref": "AWS::NoValue"
+            }
+          ]
+        },
         "FileSystemType": "LUSTRE",
         "KmsKeyId": {
           "Fn::If": [
@@ -198,6 +372,22 @@
           ]
         },
         "LustreConfiguration": {
+          "AutoImportPolicy": {
+            "Fn::If": [
+              "UseAutoImportPolicy",
+              {
+                "Fn::Select": [
+                  "14",
+                  {
+                    "Ref": "FSXOptions"
+                  }
+                ]
+              },
+              {
+                "Ref": "AWS::NoValue"
+              }
+            ]
+          },
           "ExportPath": {
             "Fn::If": [
               "UseExportPath",
@@ -261,7 +451,119 @@
                 "Ref": "AWS::NoValue"
               }
             ]
+          },
+          "DeploymentType": {
+            "Fn::If": [
+              "UseDeploymentType",
+              {
+                "Fn::Select": [
+                  "8",
+                  {
+                    "Ref": "FSXOptions"
+                  }
+                ]
+              },
+              {
+                "Ref": "AWS::NoValue"
+              }
+            ]
+          },
+          "PerUnitStorageThroughput": {
+            "Fn::If": [
+              "UsePerUnitStorageThroughput",
+              {
+                "Fn::Select": [
+                  "9",
+                  {
+                    "Ref": "FSXOptions"
+                  }
+                ]
+              },
+              {
+                "Ref": "AWS::NoValue"
+              }
+            ]
+          },
+          "DailyAutomaticBackupStartTime": {
+            "Fn::If": [
+              "UseDailyAutomaticBackupStartTime",
+              {
+                "Fn::Select": [
+                  "10",
+                  {
+                    "Ref": "FSXOptions"
+                  }
+                ]
+              },
+              {
+                "Ref": "AWS::NoValue"
+              }
+            ]
+          },
+          "AutomaticBackupRetentionDays": {
+            "Fn::If": [
+              "UseAutomaticBackupRetentionDays",
+              {
+                "Fn::Select": [
+                  "11",
+                  {
+                    "Ref": "FSXOptions"
+                  }
+                ]
+              },
+              {
+                "Ref": "AWS::NoValue"
+              }
+            ]
+          },
+          "CopyTagsToBackups": {
+            "Fn::If": [
+              "UseCopyTagsToBackups",
+              {
+                "Fn::Select": [
+                  "12",
+                  {
+                    "Ref": "FSXOptions"
+                  }
+                ]
+              },
+              {
+                "Ref": "AWS::NoValue"
+              }
+            ]
+          },
+          "DriveCacheType": {
+            "Fn::If": [
+              "UseDriveCacheType",
+              {
+                "Fn::Select": [
+                  "16",
+                  {
+                    "Ref": "FSXOptions"
+                  }
+                ]
+              },
+              {
+                "Ref": "AWS::NoValue"
+              }
+            ]
           }
+        },
+        "BackupId": {
+          "Fn::If": [
+            "UseBackupId",
+            {
+              "Fn::Select": [
+                "13",
+                {
+                  "Ref": "FSXOptions"
+                }
+              ]
+            },
+            {
+              "Ref": "AWS::NoValue"
+            }
+          ]
         },
         "SecurityGroupIds": [
           {

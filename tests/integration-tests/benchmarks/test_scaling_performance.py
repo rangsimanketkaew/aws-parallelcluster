@@ -13,7 +13,6 @@ import datetime
 import logging
 
 import pytest
-
 from assertpy import assert_that
 from benchmarks.common.metrics_reporter import (
     enable_asg_metrics,
@@ -22,9 +21,10 @@ from benchmarks.common.metrics_reporter import (
 )
 from benchmarks.common.util import get_instance_vcpus
 from remote_command_executor import RemoteCommandExecutor
+from time_utils import minutes
+
 from tests.common.assertions import assert_no_errors_in_logs
 from tests.common.schedulers_common import get_scheduler_commands
-from time_utils import minutes
 
 
 @pytest.mark.schedulers(["slurm", "sge", "torque"])
@@ -50,7 +50,8 @@ def test_scaling_performance(region, scheduler, os, instance, pcluster_config_re
     remote_command_executor = RemoteCommandExecutor(cluster)
     scheduler_commands = get_scheduler_commands(scheduler, remote_command_executor)
 
-    enable_asg_metrics(region, cluster)
+    if cluster.asg:
+        enable_asg_metrics(region, cluster)
     logging.info("Starting benchmark with following parameters: %s", benchmark_params)
     start_time = datetime.datetime.utcnow()
     if scheduler == "sge":
@@ -72,7 +73,6 @@ def test_scaling_performance(region, scheduler, os, instance, pcluster_config_re
         benchmark_params,
         region,
         cluster.cfn_name,
-        cluster.asg,
         start_time.replace(tzinfo=datetime.timezone.utc).isoformat(),
         end_time.replace(tzinfo=datetime.timezone.utc).isoformat(),
         benchmark_params["scaling_target"],
@@ -80,4 +80,4 @@ def test_scaling_performance(region, scheduler, os, instance, pcluster_config_re
     )
     assert_that(max(compute_nodes_time_series)).is_equal_to(benchmark_params["scaling_target"])
     assert_that(compute_nodes_time_series[-1]).is_equal_to(0)
-    assert_no_errors_in_logs(remote_command_executor, ["/var/log/sqswatcher", "/var/log/jobwatcher"])
+    assert_no_errors_in_logs(remote_command_executor, scheduler)

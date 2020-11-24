@@ -13,7 +13,7 @@ from enum import Enum
 
 # ------------------ Default internal representation values ------------------ #
 
-DEFAULT_AWS_DICT = {"aws_access_key_id": None, "aws_secret_access_key": None, "aws_region_name": "us-east-1"}
+DEFAULT_AWS_DICT = {"aws_access_key_id": None, "aws_secret_access_key": None, "aws_region_name": None}
 
 DEFAULT_GLOBAL_DICT = {"cluster_template": "default", "update_check": True, "sanity_check": True}
 
@@ -32,13 +32,14 @@ DEFAULT_VPC_DICT = {
     "use_public_ips": True,
     "vpc_security_group_id": None,
     "master_availability_zone": None,
+    "compute_availability_zone": None,
 }
 
 DEFAULT_EBS_DICT = {
     "shared_dir": None,
     "ebs_snapshot_id": None,
     "volume_type": "gp2",
-    "volume_size": 20,
+    "volume_size": None,
     "volume_iops": 100,
     "encrypted": False,
     "ebs_kms_key_id": None,
@@ -58,7 +59,7 @@ DEFAULT_EFS_DICT = {
 DEFAULT_RAID_DICT = {
     "shared_dir": None,
     "raid_type": None,
-    "num_of_raid_volumes": None,
+    "num_of_raid_volumes": 2,
     "volume_type": "gp2",
     "volume_size": 20,
     "volume_iops": 100,
@@ -75,20 +76,33 @@ DEFAULT_FSX_DICT = {
     "export_path": None,
     "import_path": None,
     "weekly_maintenance_start_time": None,
+    "deployment_type": None,
+    "per_unit_storage_throughput": None,
+    "daily_automatic_backup_start_time": None,
+    "automatic_backup_retention_days": None,
+    "copy_tags_to_backups": None,
+    "fsx_backup_id": None,
+    "auto_import_policy": None,
+    "storage_type": None,
+    "drive_cache_type": "NONE",
 }
 
-DEFAULT_CLUSTER_DICT = {
+DEFAULT_DCV_DICT = {"enable": None, "port": 8443, "access_from": "0.0.0.0/0"}
+
+DEFAULT_CLUSTER_SIT_DICT = {
     "key_name": None,
     "template_url": None,
-    "base_os": "alinux",
-    "scheduler": "sge",
+    "hit_template_url": None,
+    "cw_dashboard_template_url": None,
+    "base_os": None,  # base_os does not have a default, but this is here to make testing easier
+    "scheduler": None,  # The cluster does not have a default, but this is here to make testing easier
     "shared_dir": "/shared",
     "placement_group": None,
     "placement": "compute",
     "master_instance_type": "t2.micro",
-    "master_root_volume_size": 20,
+    "master_root_volume_size": 25,
     "compute_instance_type": "t2.micro",
-    "compute_root_volume_size": 20,
+    "compute_root_volume_size": 25,
     "initial_queue_size": 0,
     "max_queue_size": 10,
     "maintain_initial_size": False,
@@ -100,10 +114,11 @@ DEFAULT_CLUSTER_DICT = {
     "spot_bid_percentage": 0,
     "proxy_server": None,
     "ec2_iam_role": None,
-    "additional_iam_policies": [],
+    "additional_iam_policies": ["arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"],
     "s3_read_resource": None,
     "s3_read_write_resource": None,
     "enable_efa": None,
+    "enable_efa_gdr": None,
     "ephemeral_dir": "/scratch",
     "encrypted_ephemeral": False,
     "custom_ami": None,
@@ -115,16 +130,77 @@ DEFAULT_CLUSTER_DICT = {
     "additional_cfn_template": None,
     "tags": {},
     "custom_chef_cookbook": None,
-    "custom_awsbatch_template_url": None,
+    "disable_hyperthreading": False,
+    "enable_intel_hpc_platform": False,
     "scaling_settings": "default",
     "vpc_settings": "default",
     "ebs_settings": None,
     "efs_settings": None,
     "raid_settings": None,
     "fsx_settings": None,
+    "dcv_settings": None,
+    "cw_log_settings": None,
+    "dashboard_settings": None,
+    "cluster_config_metadata": {"sections": {}},
+    "architecture": "x86_64",
+    "network_interfaces_count": ["1", "1"],
+    "cluster_resource_bucket": None,
 }
 
-DEFAULT_PCLUSTER_DICT = {"cluster": DEFAULT_CLUSTER_DICT}
+DEFAULT_CLUSTER_HIT_DICT = {
+    "key_name": None,
+    "template_url": None,
+    "hit_template_url": None,
+    "cw_dashboard_template_url": None,
+    "base_os": None,  # base_os does not have a default, but this is here to make testing easier
+    "scheduler": None,  # The cluster does not have a default, but this is here to make testing easier
+    "shared_dir": "/shared",
+    "master_instance_type": "t2.micro",
+    "master_root_volume_size": 25,
+    "compute_root_volume_size": 25,
+    "proxy_server": None,
+    "ec2_iam_role": None,
+    "additional_iam_policies": ["arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"],
+    "s3_read_resource": None,
+    "s3_read_write_resource": None,
+    "enable_efa": None,
+    "enable_efa_gdr": None,
+    "ephemeral_dir": "/scratch",
+    "encrypted_ephemeral": False,
+    "custom_ami": None,
+    "pre_install": None,
+    "pre_install_args": None,
+    "post_install": None,
+    "post_install_args": None,
+    "extra_json": {},
+    "additional_cfn_template": None,
+    "tags": {},
+    "custom_chef_cookbook": None,
+    "disable_hyperthreading": None,
+    "enable_intel_hpc_platform": False,
+    "disable_cluster_dns": False,
+    "scaling_settings": "default",
+    "vpc_settings": "default",
+    "ebs_settings": None,
+    "efs_settings": None,
+    "raid_settings": None,
+    "fsx_settings": None,
+    "dcv_settings": None,
+    "cw_log_settings": None,
+    "dashboard_settings": None,
+    "queue_settings": None,
+    "default_queue": None,
+    "cluster_config_metadata": {"sections": {}},
+    "architecture": "x86_64",
+    "network_interfaces_count": ["1", "1"],
+    "cluster_resource_bucket": None,  # cluster_resource_bucket no default, but this is here to make testing easier
+}
+
+DEFAULT_CW_LOG_DICT = {"enable": True, "retention_days": 14}
+
+DEFAULT_DASHBOARD_DICT = {"enable": True}
+
+DEFAULT_PCLUSTER_DICT = {"cluster": DEFAULT_CLUSTER_SIT_DICT}
 
 
 class DefaultDict(Enum):
@@ -133,23 +209,28 @@ class DefaultDict(Enum):
     aws = DEFAULT_AWS_DICT
     global_ = DEFAULT_GLOBAL_DICT
     aliases = DEFAULT_ALIASES_DICT
-    cluster = DEFAULT_CLUSTER_DICT
+    cluster_sit = DEFAULT_CLUSTER_SIT_DICT
+    cluster_hit = DEFAULT_CLUSTER_HIT_DICT
     scaling = DEFAULT_SCALING_DICT
     vpc = DEFAULT_VPC_DICT
     ebs = DEFAULT_EBS_DICT
     efs = DEFAULT_EFS_DICT
     raid = DEFAULT_RAID_DICT
     fsx = DEFAULT_FSX_DICT
+    dcv = DEFAULT_DCV_DICT
+    cw_log = DEFAULT_CW_LOG_DICT
+    dashboard = DEFAULT_DASHBOARD_DICT
     pcluster = DEFAULT_PCLUSTER_DICT
 
 
 # ------------------ Default CFN parameters ------------------ #
 
 # number of CFN parameters created by the PclusterConfig object.
-CFN_CONFIG_NUM_OF_PARAMS = 54
+CFN_SIT_CONFIG_NUM_OF_PARAMS = 61
+CFN_HIT_CONFIG_NUM_OF_PARAMS = 52
 
 # CFN parameters created by the pcluster CLI
-CFN_CLI_RESERVED_PARAMS = ["ResourcesS3Bucket"]
+CFN_CLI_RESERVED_PARAMS = ["ArtifactS3RootDirectory", "RemoveBucketOnDeletion"]
 
 
 DEFAULT_SCALING_CFN_PARAMS = {"ScaleDownIdleTime": "10"}
@@ -170,42 +251,47 @@ DEFAULT_EBS_CFN_PARAMS = {
     "SharedDir": "NONE,NONE,NONE,NONE,NONE",
     "EBSSnapshotId": "NONE,NONE,NONE,NONE,NONE",
     "VolumeType": "gp2,gp2,gp2,gp2,gp2",
-    "VolumeSize": "20,20,20,20,20",
+    "VolumeSize": "NONE,NONE,NONE,NONE,NONE",
     "VolumeIOPS": "100,100,100,100,100",
     "EBSEncryption": "false,false,false,false,false",
     "EBSKMSKeyId": "NONE,NONE,NONE,NONE,NONE",
     "EBSVolumeId": "NONE,NONE,NONE,NONE,NONE",
 }
 
-DEFAULT_EFS_CFN_PARAMS = {"EFSOptions": "NONE,NONE,NONE,NONE,NONE,NONE,NONE,NONE"}
+DEFAULT_EFS_CFN_PARAMS = {"EFSOptions": "NONE,NONE,NONE,NONE,NONE,NONE,NONE,NONE,NONE"}
 
 DEFAULT_RAID_CFN_PARAMS = {"RAIDOptions": "NONE,NONE,NONE,NONE,NONE,NONE,NONE,NONE"}
 
-DEFAULT_FSX_CFN_PARAMS = {"FSXOptions": "NONE,NONE,NONE,NONE,NONE,NONE,NONE,NONE"}
+DEFAULT_FSX_CFN_PARAMS = {
+    "FSXOptions": "NONE,NONE,NONE,NONE,NONE,NONE,NONE,NONE,NONE,NONE,NONE,NONE,NONE,NONE,NONE,NONE,NONE"
+}
 
-DEFAULT_CLUSTER_CFN_PARAMS = {
+DEFAULT_DCV_CFN_PARAMS = {"DCVOptions": "NONE,NONE,NONE"}
+DEFAULT_CW_LOG_CFN_PARAMS = {"CWLogOptions": "true,14"}
+
+DEFAULT_CLUSTER_SIT_CFN_PARAMS = {
     "KeyName": "NONE",
-    "BaseOS": "alinux",
-    "CLITemplate": "default",
-    "Scheduler": "sge",
+    "BaseOS": "alinux2",
+    "Scheduler": "slurm",
     "SharedDir": "/shared",
     "PlacementGroup": "NONE",
     "Placement": "compute",
     "MasterInstanceType": "t2.micro",
-    "MasterRootVolumeSize": "20",
+    "MasterRootVolumeSize": "25",
     "ComputeInstanceType": "t2.micro",
-    "ComputeRootVolumeSize": "20",
+    "ComputeRootVolumeSize": "25",
     "DesiredSize": "0",
     "MaxSize": "10",
     "MinSize": "0",
     "ClusterType": "ondemand",
-    "SpotPrice": "0.0",
+    "SpotPrice": "0",
     "ProxyServer": "NONE",
     "EC2IAMRoleName": "NONE",
-    "EC2IAMPolicies": "NONE",
+    "EC2IAMPolicies": "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy",
     "S3ReadResource": "NONE",
     "S3ReadWriteResource": "NONE",
     "EFA": "NONE",
+    "EFAGDR": "NONE",
     "EphemeralDir": "/scratch",
     "EncryptedEphemeral": "false",
     "CustomAMI": "NONE",
@@ -216,9 +302,12 @@ DEFAULT_CLUSTER_CFN_PARAMS = {
     "ExtraJson": "{}",
     "AdditionalCfnTemplate": "NONE",
     "CustomChefCookbook": "NONE",
-    "CustomAWSBatchTemplateURL": "NONE",
     "NumberOfEBSVol": "1",
-    # "ResourcesS3Bucket": "NONE",  # parameter added by the CLI
+    "Cores": "NONE,NONE,NONE,NONE",
+    "IntelHPCPlatform": "false",
+    "ResourcesS3Bucket": "NONE",  # parameter added by the CLI
+    # "ArtifactS3RootDirectory": "NONE",  # parameter added by the CLI
+    # "RemoveBucketOnDeletion": "NONE",  # parameter added by the CLI
     # scaling
     "ScaleDownIdleTime": "10",
     # vpc
@@ -235,17 +324,94 @@ DEFAULT_CLUSTER_CFN_PARAMS = {
     # "SharedDir": "NONE,NONE,NONE,NONE,NONE",  # not existing with single ebs volume
     "EBSSnapshotId": "NONE,NONE,NONE,NONE,NONE",
     "VolumeType": "gp2,gp2,gp2,gp2,gp2",
-    "VolumeSize": "20,20,20,20,20",
+    "VolumeSize": "NONE,NONE,NONE,NONE,NONE",
     "VolumeIOPS": "100,100,100,100,100",
     "EBSEncryption": "false,false,false,false,false",
     "EBSKMSKeyId": "NONE,NONE,NONE,NONE,NONE",
     "EBSVolumeId": "NONE,NONE,NONE,NONE,NONE",
     # efs
-    "EFSOptions": "NONE,NONE,NONE,NONE,NONE,NONE,NONE,NONE",
+    "EFSOptions": "NONE,NONE,NONE,NONE,NONE,NONE,NONE,NONE,NONE",
     # raid
     "RAIDOptions": "NONE,NONE,NONE,NONE,NONE,NONE,NONE,NONE",
     # fsx
-    "FSXOptions": "NONE,NONE,NONE,NONE,NONE,NONE,NONE,NONE",
+    "FSXOptions": "NONE,NONE,NONE,NONE,NONE,NONE,NONE,NONE,NONE,NONE,NONE,NONE,NONE,NONE,NONE,NONE,NONE",
+    # dcv
+    "DCVOptions": "NONE,NONE,NONE",
+    # cw_log_settings
+    "CWLogOptions": "true,14",
+    "ClusterConfigMetadata": "{'sections': {}}",
+    # architecture
+    "Architecture": "x86_64",
+    "NetworkInterfacesCount": "1,1",
+}
+
+
+DEFAULT_CLUSTER_HIT_CFN_PARAMS = {
+    "KeyName": "NONE",
+    "BaseOS": "alinux2",
+    "Scheduler": "slurm",
+    "SharedDir": "/shared",
+    "MasterInstanceType": "t2.micro",
+    "MasterRootVolumeSize": "25",
+    "ComputeRootVolumeSize": "25",
+    "ProxyServer": "NONE",
+    "EC2IAMRoleName": "NONE",
+    "EC2IAMPolicies": "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy",
+    "S3ReadResource": "NONE",
+    "S3ReadWriteResource": "NONE",
+    "EFA": "NONE",
+    "EFAGDR": "NONE",
+    "EphemeralDir": "/scratch",
+    "EncryptedEphemeral": "false",
+    "CustomAMI": "NONE",
+    "PreInstallScript": "NONE",
+    "PreInstallArgs": "NONE",
+    "PostInstallScript": "NONE",
+    "PostInstallArgs": "NONE",
+    "ExtraJson": "{}",
+    "AdditionalCfnTemplate": "NONE",
+    "CustomChefCookbook": "NONE",
+    "NumberOfEBSVol": "1",
+    "Cores": "NONE,NONE,NONE,NONE",
+    "IntelHPCPlatform": "false",
+    "ResourcesS3Bucket": "NONE",  # parameter added by the CLI
+    # "ArtifactS3RootDirectory": "NONE",  # parameter added by the CLI
+    # "RemoveBucketOnDeletion": "NONE",  # parameter added by the CLI
+    # scaling
+    "ScaleDownIdleTime": "10",
+    # vpc
+    "VPCId": "NONE",
+    "MasterSubnetId": "NONE",
+    "AccessFrom": "0.0.0.0/0",
+    "AdditionalSG": "NONE",
+    "ComputeSubnetId": "NONE",
+    "ComputeSubnetCidr": "NONE",
+    "UsePublicIps": "true",
+    "VPCSecurityGroupId": "NONE",
+    "AvailabilityZone": "NONE",
+    # ebs
+    # "SharedDir": "NONE,NONE,NONE,NONE,NONE",  # not existing with single ebs volume
+    "EBSSnapshotId": "NONE,NONE,NONE,NONE,NONE",
+    "VolumeType": "gp2,gp2,gp2,gp2,gp2",
+    "VolumeSize": "NONE,NONE,NONE,NONE,NONE",
+    "VolumeIOPS": "100,100,100,100,100",
+    "EBSEncryption": "false,false,false,false,false",
+    "EBSKMSKeyId": "NONE,NONE,NONE,NONE,NONE",
+    "EBSVolumeId": "NONE,NONE,NONE,NONE,NONE",
+    # efs
+    "EFSOptions": "NONE,NONE,NONE,NONE,NONE,NONE,NONE,NONE,NONE",
+    # raid
+    "RAIDOptions": "NONE,NONE,NONE,NONE,NONE,NONE,NONE,NONE",
+    # fsx
+    "FSXOptions": "NONE,NONE,NONE,NONE,NONE,NONE,NONE,NONE,NONE,NONE,NONE,NONE,NONE,NONE,NONE,NONE,NONE",
+    # dcv
+    "DCVOptions": "NONE,NONE,NONE",
+    # cw_log_settings
+    "CWLogOptions": "true,14",
+    "ClusterConfigMetadata": "{'sections': {}}",
+    # architecture
+    "Architecture": "x86_64",
+    "NetworkInterfacesCount": "1,1",
 }
 
 
@@ -258,4 +424,7 @@ class DefaultCfnParams(Enum):
     efs = DEFAULT_EFS_CFN_PARAMS
     raid = DEFAULT_RAID_CFN_PARAMS
     fsx = DEFAULT_FSX_CFN_PARAMS
-    cluster = DEFAULT_CLUSTER_CFN_PARAMS
+    dcv = DEFAULT_DCV_CFN_PARAMS
+    cw_log = DEFAULT_CW_LOG_CFN_PARAMS
+    cluster_sit = DEFAULT_CLUSTER_SIT_CFN_PARAMS
+    cluster_hit = DEFAULT_CLUSTER_HIT_CFN_PARAMS

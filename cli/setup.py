@@ -21,15 +21,19 @@ def readme():
         return f.read()
 
 
-VERSION = "2.4.1"
+VERSION = "2.10.1"
 REQUIRES = [
-    "boto3>=1.9.54",
-    "future>=0.16.0,<=0.17.1",
-    "tabulate>=0.8.2,<=0.8.3",
+    "setuptools",
+    "boto3>=1.16.14",
+    "future>=0.16.0,<=0.18.2",
+    "tabulate==0.8.5" if sys.version_info.major == 3 and sys.version_info.minor <= 4 else "tabulate>=0.8.2,<=0.8.7",
     "ipaddress>=1.0.22",
-    "enum34>=1.1.6",
-    "PyYAML>=5.1.2",
+    "PyYAML==5.2" if sys.version_info.major == 3 and sys.version_info.minor <= 4 else "PyYAML>=5.3.1",
+    "jinja2==2.10.1" if sys.version_info.major == 3 and sys.version_info.minor <= 4 else "jinja2>=2.11.0",
 ]
+
+if sys.version_info < (3, 4):
+    REQUIRES.append("enum34>=1.1.6")
 
 if sys.version_info[0] == 2:
     REQUIRES.append("configparser>=3.5.0,<=3.8.1")
@@ -42,12 +46,14 @@ setup(
     "and manage HPC clusters in the AWS cloud.",
     url="https://github.com/aws/aws-parallelcluster",
     license="Apache License 2.0",
-    packages=find_packages(),
-    python_requires=">=2.7",
+    package_dir={"": "src"},
+    packages=find_packages("src"),
+    python_requires=">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*",
     install_requires=REQUIRES,
     entry_points={
         "console_scripts": [
             "pcluster = pcluster.cli:main",
+            "pcluster-config = pcluster_config.cli:main",
             "awsbqueues = awsbatch.awsbqueues:main",
             "awsbhosts = awsbatch.awsbhosts:main",
             "awsbstat = awsbatch.awsbstat:main",
@@ -58,13 +64,27 @@ setup(
     },
     include_package_data=True,
     zip_safe=False,
-    package_data={"": ["examples/config"]},
+    package_data={"": ["src/examples/config"]},
     long_description=readme(),
     classifiers=[
         "Development Status :: 5 - Production/Stable",
         "Environment :: Console",
         "Programming Language :: Python",
+        "Programming Language :: Python :: 2",
+        "Programming Language :: Python :: 2.7",
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.4",
+        "Programming Language :: Python :: 3.5",
+        "Programming Language :: Python :: 3.6",
+        "Programming Language :: Python :: 3.7",
+        "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.9",
         "Topic :: Scientific/Engineering",
         "License :: OSI Approved :: Apache Software License",
     ],
+    project_urls={
+        "Changelog": "https://github.com/aws/aws-parallelcluster/blob/develop/CHANGELOG.md",
+        "Issue Tracker": "https://github.com/aws/aws-parallelcluster/issues",
+        "Documentation": "https://docs.aws.amazon.com/parallelcluster/",
+    },
 )

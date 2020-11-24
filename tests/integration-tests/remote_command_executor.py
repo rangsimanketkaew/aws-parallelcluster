@@ -14,6 +14,7 @@ import os
 import shlex
 
 from fabric import Connection
+from utils import get_username_for_os
 
 
 class RemoteCommandExecutionError(Exception):
@@ -26,22 +27,16 @@ class RemoteCommandExecutionError(Exception):
 class RemoteCommandExecutor:
     """Execute remote commands on the cluster master node."""
 
-    USERNAMES = {
-        "alinux": "ec2-user",
-        "centos6": "centos",
-        "centos7": "centos",
-        "ubuntu1604": "ubuntu",
-        "ubuntu1804": "ubuntu",
-    }
-
-    def __init__(self, cluster):
+    def __init__(self, cluster, username=None):
+        if not username:
+            username = get_username_for_os(cluster.os)
         self.__connection = Connection(
             host=cluster.master_ip,
-            user=self.USERNAMES[cluster.os],
+            user=username,
             forward_agent=False,
-            connect_kwargs={"key_filename": cluster.ssh_key},
+            connect_kwargs={"key_filename": [cluster.ssh_key]},
         )
-        self.__user_at_hostname = "{0}@{1}".format(self.USERNAMES[cluster.os], cluster.master_ip)
+        self.__user_at_hostname = "{0}@{1}".format(username, cluster.master_ip)
 
     def __del__(self):
         try:
@@ -51,7 +46,15 @@ class RemoteCommandExecutor:
             logging.warning("Exception raised when closing remote ssh client: {0}".format(e))
 
     def run_remote_command(
-        self, command, log_error=True, additional_files=None, raise_on_error=True, login_shell=True, hide=False
+        self,
+        command,
+        log_error=True,
+        additional_files=None,
+        raise_on_error=True,
+        login_shell=True,
+        hide=False,
+        log_output=False,
+        timeout=None,
     ):
         """
         Execute remote command on the cluster master node.
@@ -62,6 +65,8 @@ class RemoteCommandExecutor:
         :param raise_on_error: if True raises a RemoteCommandExecutionError on failures
         :param login_shell: if True prepends /bin/bash --login -c to the given command
         :param hide: do not print command output to the local stdout
+        :param log_output: log the command output.
+        :param timeout: interrupt connection after N seconds, default of None = no timeout
         :return: result of the execution.
         """
         if isinstance(command, list):
@@ -71,9 +76,11 @@ class RemoteCommandExecutor:
         if login_shell:
             command = "/bin/bash --login -c {0}".format(shlex.quote(command))
 
-        result = self.__connection.run(command, warn=True, pty=True, hide=hide)
+        result = self.__connection.run(command, warn=True, pty=True, hide=hide, timeout=timeout)
         result.stdout = "\n".join(result.stdout.splitlines())
         result.stderr = "\n".join(result.stderr.splitlines())
+        if log_output:
+            logging.info("Command output:\n%s", result.stdout)
         if result.failed and raise_on_error:
             if log_error:
                 logging.error(
@@ -84,7 +91,9 @@ class RemoteCommandExecutor:
             raise RemoteCommandExecutionError(result)
         return result
 
-    def run_remote_script(self, script_file, args=None, log_error=True, additional_files=None, hide=False):
+    def run_remote_script(
+        self, script_file, args=None, log_error=True, additional_files=None, hide=False, timeout=None, run_as_root=False
+    ):
         """
         Execute a script remotely on the cluster master node.
 
@@ -94,17 +103,29 @@ class RemoteCommandExecutor:
         :param log_error: log errors.
         :param additional_files: list of additional files (full path) to copy before executing script.
         :param hide: do not print command output to the local stdout
+        :param timeout: interrupt connection after N seconds, default of None = no timeout
         :return: result of the execution.
         """
         script_name = os.path.basename(script_file)
         self.__connection.put(script_file, script_name)
         if not args:
             args = []
-        return self.run_remote_command(
-            ["/bin/bash", "--login", script_name] + args,
-            log_error=log_error,
-            additional_files=additional_files,
-            hide=hide,
+        return (
+            self.run_remote_command(
+                ["sudo", "/bin/bash", script_name] + args,
+                log_error=log_error,
+                additional_files=additional_files,
+                hide=hide,
+                timeout=timeout,
+            )
+            if run_as_root
+            else self.run_remote_command(
+                ["/bin/bash", "--login", script_name] + args,
+                log_error=log_error,
+                additional_files=additional_files,
+                hide=hide,
+                timeout=timeout,
+            )
         )
 
     def _copy_additional_files(self, files):

@@ -12,14 +12,16 @@
 import logging
 
 import pytest
-
 from assertpy import assert_that
 from remote_command_executor import RemoteCommandExecutor
+
 from tests.common.assertions import assert_no_errors_in_logs
 
 
-@pytest.mark.regions(["us-east-1"])
-@pytest.mark.schedulers(["sge", "awsbatch"])
+@pytest.mark.regions(["ap-northeast-2"])
+@pytest.mark.schedulers(["slurm", "awsbatch"])
+@pytest.mark.oss(["alinux2"])
+@pytest.mark.usefixtures("os", "instance")
 def test_iam_policies(region, scheduler, pcluster_config_reader, clusters_factory):
     """Test IAM Policies"""
     cluster_config = pcluster_config_reader(
@@ -31,8 +33,7 @@ def test_iam_policies(region, scheduler, pcluster_config_reader, clusters_factor
     _test_s3_access(remote_command_executor, region)
     _test_batch_access(remote_command_executor, region)
 
-    if not scheduler == "awsbatch":
-        assert_no_errors_in_logs(remote_command_executor, ["/var/log/sqswatcher", "/var/log/jobwatcher"])
+    assert_no_errors_in_logs(remote_command_executor, scheduler)
 
 
 def _test_s3_access(remote_command_executor, region):

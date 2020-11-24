@@ -12,16 +12,17 @@
 import logging
 
 import pytest
-
 from assertpy import assert_that
 from remote_command_executor import RemoteCommandExecutor
+
 from tests.common.schedulers_common import get_scheduler_commands
+from tests.storage.snapshots_factory import EBSSnapshotsFactory
 from tests.storage.storage_common import verify_directory_correctly_shared
 
 
-@pytest.mark.regions(["us-west-2", "cn-north-1", "us-gov-west-1"])
+@pytest.mark.regions(["eu-west-3", "cn-north-1", "us-gov-west-1"])
 @pytest.mark.instances(["c4.xlarge", "c5.xlarge"])
-@pytest.mark.schedulers(["sge", "awsbatch"])
+@pytest.mark.schedulers(["sge"])
 @pytest.mark.usefixtures("region", "os", "instance")
 def test_ebs_single(scheduler, pcluster_config_reader, clusters_factory):
     mount_dir = "ebs_mount_dir"
@@ -35,10 +36,43 @@ def test_ebs_single(scheduler, pcluster_config_reader, clusters_factory):
     _test_ebs_correctly_shared(remote_command_executor, mount_dir, scheduler_commands)
 
 
+@pytest.mark.dimensions("ap-northeast-2", "c5.xlarge", "alinux2", "sge")
+@pytest.mark.dimensions("cn-northwest-1", "c4.xlarge", "ubuntu1804", "slurm")
+@pytest.mark.dimensions("eu-west-1", "c5.xlarge", "centos8", "slurm")
+@pytest.mark.usefixtures("os", "instance")
+def test_ebs_snapshot(
+    request, vpc_stacks, region, scheduler, pcluster_config_reader, clusters_factory, snapshots_factory
+):
+    logging.info("Testing ebs snapshot")
+    mount_dir = "ebs_mount_dir"
+    volume_size = 21
+    # This volume_size is set to be larger than snapshot size(10G), to test create volumes larger than its snapshot size
+
+    logging.info("Creating snapshot")
+
+    snapshot_id = snapshots_factory.create_snapshot(request, vpc_stacks[region].cfn_outputs["PublicSubnetId"], region)
+
+    logging.info("Snapshot id: %s" % snapshot_id)
+    cluster_config = pcluster_config_reader(mount_dir=mount_dir, volume_size=volume_size, snapshot_id=snapshot_id)
+
+    cluster = clusters_factory(cluster_config)
+    remote_command_executor = RemoteCommandExecutor(cluster)
+
+    mount_dir = "/" + mount_dir
+    scheduler_commands = get_scheduler_commands(scheduler, remote_command_executor)
+    _test_ebs_correctly_mounted(remote_command_executor, mount_dir, volume_size="9.8")
+    _test_ebs_resize(remote_command_executor, mount_dir, volume_size=volume_size)
+    _test_ebs_correctly_shared(remote_command_executor, mount_dir, scheduler_commands)
+
+    # Checks for test data
+    result = remote_command_executor.run_remote_command("cat {}/test.txt".format(mount_dir))
+    assert_that(result.stdout.strip()).is_equal_to("hello world")
+
+
 # cn-north-1 does not support KMS
-@pytest.mark.regions(["us-east-1", "us-gov-east-1"])
-@pytest.mark.instances(["c5.xlarge"])
-@pytest.mark.schedulers(["sge", "awsbatch"])
+@pytest.mark.dimensions("ca-central-1", "c5.xlarge", "alinux2", "awsbatch")
+@pytest.mark.dimensions("ca-central-1", "c5.xlarge", "ubuntu1804", "slurm")
+@pytest.mark.dimensions("eu-west-2", "c5.xlarge", "centos8", "slurm")
 @pytest.mark.usefixtures("region", "os", "instance")
 def test_ebs_multiple(scheduler, pcluster_config_reader, clusters_factory):
     mount_dirs = ["/ebs_mount_dir_{0}".format(i) for i in range(0, 5)]
@@ -53,11 +87,22 @@ def test_ebs_multiple(scheduler, pcluster_config_reader, clusters_factory):
         _test_ebs_correctly_shared(remote_command_executor, mount_dir, scheduler_commands)
 
 
-@pytest.mark.regions(["eu-west-2", "cn-northwest-1", "us-gov-west-1"])
-@pytest.mark.instances(["c4.xlarge", "c5.xlarge"])
-@pytest.mark.schedulers(["sge", "awsbatch"])
+@pytest.mark.dimensions("cn-northwest-1", "c4.xlarge", "alinux", "slurm")
 @pytest.mark.usefixtures("region", "os", "instance")
 def test_default_ebs(scheduler, pcluster_config_reader, clusters_factory):
+    cluster_config = pcluster_config_reader()
+    cluster = clusters_factory(cluster_config)
+    remote_command_executor = RemoteCommandExecutor(cluster)
+
+    mount_dir = "/shared"
+    scheduler_commands = get_scheduler_commands(scheduler, remote_command_executor)
+    _test_ebs_correctly_mounted(remote_command_executor, mount_dir, volume_size=20)
+    _test_ebs_correctly_shared(remote_command_executor, mount_dir, scheduler_commands)
+
+
+@pytest.mark.dimensions("us-gov-east-1", "c5.xlarge", "ubuntu1604", "torque")
+@pytest.mark.usefixtures("region", "os", "instance")
+def test_ebs_single_empty(scheduler, pcluster_config_reader, clusters_factory):
     cluster_config = pcluster_config_reader()
     cluster = clusters_factory(cluster_config)
     remote_command_executor = RemoteCommandExecutor(cluster)
@@ -76,9 +121,7 @@ def _test_ebs_correctly_mounted(remote_command_executor, mount_dir, volume_size)
     assert_that(result.stdout).matches(r"{size}G {mount_dir}".format(size=volume_size, mount_dir=mount_dir))
 
     result = remote_command_executor.run_remote_command("cat /etc/fstab")
-    assert_that(result.stdout).matches(
-        r"/dev/disk/by-ebs-volumeid/vol-[a-z0-9]{{17}} {mount_dir} ext4 _netdev 0 0".format(mount_dir=mount_dir)
-    )
+    assert_that(result.stdout).matches(r"UUID=.* {mount_dir} ext4 _netdev 0 0".format(mount_dir=mount_dir))
 
 
 def _test_ebs_correctly_shared(remote_command_executor, mount_dir, scheduler_commands):
@@ -89,3 +132,51 @@ def _test_ebs_correctly_shared(remote_command_executor, mount_dir, scheduler_com
 def _test_home_correctly_shared(remote_command_executor, scheduler_commands):
     logging.info("Testing home dir correctly mounted on compute nodes")
     verify_directory_correctly_shared(remote_command_executor, "/home", scheduler_commands)
+
+
+def _test_ebs_resize(remote_command_executor, mount_dir, volume_size):
+    """
+    This test verifies the following case:
+
+    If the volume is created from a snapshot with a size larger than the snapshot, the size of the volume is correct.
+    """
+    logging.info("Testing ebs has correct volume size")
+
+    # get the filesystem that the shared_dir is mounted on
+    # example output of "df -h -t ext4"
+    #     Filesystem      Size  Used Avail Use% Mounted on
+    # /dev/nvme1n1p1  9.8G   37M  9.3G   1% /ebs_mount_dir
+    # /dev/nvme2n1p1  9.8G   37M  9.3G   1% /existing_mount_dir
+    filesystem_name = remote_command_executor.run_remote_command(
+        "df -h -t ext4 | tail -n +2 |grep '{mount_dir}' | awk '{{print $1}}'".format(mount_dir=mount_dir)
+    ).stdout
+
+    # get the volume name given the filesystem name
+    # example input: /dev/nvme1n1p1
+    # example output: nvme1n1
+    volume_name = remote_command_executor.run_remote_command(
+        "lsblk -no pkname {filesystem_name}".format(filesystem_name=filesystem_name)
+    ).stdout
+
+    # get the volume size of the volume
+    # example output of "lsblk"
+    # NAME          MAJ:MIN RM SIZE RO TYPE MOUNTPOINT
+    # nvme0n1       259:0    0  25G  0 disk
+    # ├─nvme0n1p1   259:1    0  25G  0 part /
+    # └─nvme0n1p128 259:2    0   1M  0 part
+    # nvme1n1       259:3    0  21G  0 disk
+    # └─nvme1n1p1   259:4    0  10G  0 part /ebs_mount_dir
+    # nvme2n1       259:5    0  10G  0 disk
+    # └─nvme2n1p1   259:6    0  10G  0 part /existing_mount_dir
+    result = remote_command_executor.run_remote_command(
+        "lsblk | tail -n +2 | grep {volume_name}| awk '{{print $4}}' | sed -n '1p'''".format(volume_name=volume_name)
+    )
+
+    assert_that(result.stdout).matches(r"{size}G".format(size=volume_size))
+
+
+@pytest.fixture()
+def snapshots_factory():
+    factory = EBSSnapshotsFactory()
+    yield factory
+    factory.release_all()

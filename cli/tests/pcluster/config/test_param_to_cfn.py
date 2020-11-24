@@ -9,47 +9,59 @@
 # OR CONDITIONS OF ANY KIND, express or implied. See the License for the specific language governing permissions and
 # limitations under the License.
 import pytest
-
 from assertpy import assert_that
-from pcluster.config.mappings import CLUSTER, SCALING
-from tests.pcluster.config.utils import get_mocked_pcluster_config, get_param_definition
+
+from pcluster.config.mappings import CLUSTER_SIT, SCALING
+from tests.pcluster.config.utils import get_cfnparam_definition, get_mocked_pcluster_config
 
 
 @pytest.mark.parametrize(
     "section_definition, param_key, param_value, expected_value",
     [
         # Param
-        (CLUSTER, "key_name", None, "NONE"),
-        (CLUSTER, "key_name", "test", "test"),
-        (CLUSTER, "key_name", "NONE", "NONE"),
+        (CLUSTER_SIT, "key_name", None, "NONE"),
+        (CLUSTER_SIT, "key_name", "test", "test"),
+        (CLUSTER_SIT, "key_name", "NONE", "NONE"),
         # BoolParam
-        (CLUSTER, "encrypted_ephemeral", None, "false"),
-        (CLUSTER, "encrypted_ephemeral", True, "true"),
-        (CLUSTER, "encrypted_ephemeral", False, "false"),
+        (CLUSTER_SIT, "encrypted_ephemeral", None, "NONE"),
+        (CLUSTER_SIT, "encrypted_ephemeral", True, "true"),
+        (CLUSTER_SIT, "encrypted_ephemeral", False, "false"),
         # IntParam
         (SCALING, "scaledown_idletime", 10, "10"),
         (SCALING, "scaledown_idletime", 10, "10"),
         (SCALING, "scaledown_idletime", 3, "3"),
+        (
+            CLUSTER_SIT,
+            "extra_json",
+            {"cluster": {"cfn_scheduler_slots": "cores"}, "extra_key": "extra_value"},
+            '{"cfncluster": {"cfn_scheduler_slots": "cores"}, "extra_key": "extra_value"}',
+        ),
+        (
+            CLUSTER_SIT,
+            "extra_json",
+            {"cfncluster": {"cfn_scheduler_slots": "cores"}, "extra_key": "extra_value"},
+            '{"cfncluster": {"cfn_scheduler_slots": "cores"}, "extra_key": "extra_value"}',
+        ),
         # SpotPriceParam --> FloatParam
-        (CLUSTER, "spot_price", None, "0.0"),
-        (CLUSTER, "spot_price", 0.0009, "0.0009"),
-        (CLUSTER, "spot_price", 0.0, "0.0"),
-        (CLUSTER, "spot_price", 10, "10"),
-        (CLUSTER, "spot_price", 3, "3"),
+        (CLUSTER_SIT, "spot_price", None, "0"),
+        (CLUSTER_SIT, "spot_price", 0.0009, "0.0009"),
+        (CLUSTER_SIT, "spot_price", 0.0, "0"),
+        (CLUSTER_SIT, "spot_price", 10, "10"),
+        (CLUSTER_SIT, "spot_price", 3, "3"),
         # SharedDirParam
-        (CLUSTER, "shared_dir", "test", "test"),
-        (CLUSTER, "shared_dir", None, "/shared"),
+        (CLUSTER_SIT, "shared_dir", "test", "test"),
+        (CLUSTER_SIT, "shared_dir", None, "/shared"),
         # AdditionalIamPoliciesParam
-        (CLUSTER, "additional_iam_policies", None, "NONE"),
-        (CLUSTER, "additional_iam_policies", [], "NONE"),
-        (CLUSTER, "additional_iam_policies", ["policy1"], "policy1"),
-        (CLUSTER, "additional_iam_policies", ["policy1", "policy2"], "policy1,policy2"),
+        (CLUSTER_SIT, "additional_iam_policies", None, "NONE"),
+        (CLUSTER_SIT, "additional_iam_policies", [], "NONE"),
+        (CLUSTER_SIT, "additional_iam_policies", ["policy1"], "policy1"),
+        (CLUSTER_SIT, "additional_iam_policies", ["policy1", "policy2"], "policy1,policy2"),
     ],
 )
 def test_param_to_cfn_value(mocker, section_definition, param_key, param_value, expected_value):
     pcluster_config = get_mocked_pcluster_config(mocker)
 
-    param_definition, param_type = get_param_definition(section_definition, param_key)
+    param_definition, param_type = get_cfnparam_definition(section_definition, param_key)
     param = param_type(section_definition.get("key"), "default", param_key, param_definition, pcluster_config)
     param.value = param_value
     cfn_value = param.get_cfn_value()
@@ -60,27 +72,34 @@ def test_param_to_cfn_value(mocker, section_definition, param_key, param_value, 
     "section_definition, param_key, param_value, expected_cfn_params",
     [
         # Param
-        (CLUSTER, "key_name", None, {"KeyName": "NONE"}),
-        (CLUSTER, "key_name", "NONE", {"KeyName": "NONE"}),
-        (CLUSTER, "key_name", "test", {"KeyName": "test"}),
+        (CLUSTER_SIT, "key_name", None, {"KeyName": "NONE"}),
+        (CLUSTER_SIT, "key_name", "NONE", {"KeyName": "NONE"}),
+        (CLUSTER_SIT, "key_name", "test", {"KeyName": "test"}),
         # BoolParam
-        (CLUSTER, "encrypted_ephemeral", None, {"EncryptedEphemeral": "false"}),
-        (CLUSTER, "encrypted_ephemeral", True, {"EncryptedEphemeral": "true"}),
-        (CLUSTER, "encrypted_ephemeral", False, {"EncryptedEphemeral": "false"}),
+        (CLUSTER_SIT, "encrypted_ephemeral", None, {"EncryptedEphemeral": "NONE"}),
+        (CLUSTER_SIT, "encrypted_ephemeral", True, {"EncryptedEphemeral": "true"}),
+        (CLUSTER_SIT, "encrypted_ephemeral", False, {"EncryptedEphemeral": "false"}),
         # IntParam
         (SCALING, "scaledown_idletime", None, {"ScaleDownIdleTime": "10"}),
         (SCALING, "scaledown_idletime", 10, {"ScaleDownIdleTime": "10"}),
         (SCALING, "scaledown_idletime", 3, {"ScaleDownIdleTime": "3"}),
         # SharedDirParam
-        (CLUSTER, "shared_dir", "test", {"SharedDir": "test"}),
-        # (CLUSTER, "shared_dir", {"ebs": [], "shared_dir": "test"}, {"SharedDir": "test"}),
-        # (CLUSTER, "shared_dir", {"ebs": [{"label": "fake_ebs"}], "shared_dir": "unused_value"}, {}),
+        (CLUSTER_SIT, "shared_dir", "test", {"SharedDir": "test"}),
+        # (CLUSTER_SIT, "shared_dir", {"ebs": [], "shared_dir": "test"}, {"SharedDir": "test"}),
+        # (CLUSTER_SIT, "shared_dir", {"ebs": [{"label": "fake_ebs"}], "shared_dir": "unused_value"}, {}),
+        # ArgsParam
+        (CLUSTER_SIT, "pre_install_args", '"R wget"', {"PreInstallArgs": '\\"R wget\\"'}),
+        (CLUSTER_SIT, "pre_install_args", "'R wget'", {"PreInstallArgs": "'R wget'"}),
+        (CLUSTER_SIT, "pre_install_args", "R wget", {"PreInstallArgs": "R wget"}),
+        (CLUSTER_SIT, "post_install_args", '"R wget"', {"PostInstallArgs": '\\"R wget\\"'}),
+        (CLUSTER_SIT, "post_install_args", "'R wget'", {"PostInstallArgs": "'R wget'"}),
+        (CLUSTER_SIT, "post_install_args", "R wget", {"PostInstallArgs": "R wget"}),
     ],
 )
 def test_param_to_cfn(mocker, section_definition, param_key, param_value, expected_cfn_params):
     pcluster_config = get_mocked_pcluster_config(mocker)
 
-    param_definition, param_type = get_param_definition(section_definition, param_key)
+    param_definition, param_type = get_cfnparam_definition(section_definition, param_key)
     param = param_type(section_definition.get("key"), "default", param_key, param_definition, pcluster_config)
     param.value = param_value
     cfn_params = param.to_cfn()

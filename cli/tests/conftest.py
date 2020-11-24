@@ -10,8 +10,13 @@ import os
 import boto3
 import pytest
 from botocore.stub import Stubber
-
 from jinja2 import Environment, FileSystemLoader
+
+
+@pytest.fixture(autouse=True)
+def clear_env():
+    if "AWS_DEFAULT_REGION" in os.environ:
+        del os.environ["AWS_DEFAULT_REGION"]
 
 
 @pytest.fixture
@@ -50,11 +55,12 @@ def test_datadir(request, datadir):
 @pytest.fixture()
 def convert_to_date_mock(request, mocker):
     """Mock convert_to_date function by enforcing the timezone to UTC."""
-    module_under_test = request.module.__name__.replace("test_", "")
+    module_under_test = request.node.fspath.purebasename.replace("test_", "")
 
     def _convert_to_date_utc(*args, **kwargs):
-        from awsbatch.utils import convert_to_date
         from dateutil import tz
+
+        from awsbatch.utils import convert_to_date
 
         # executes convert_to_date but overrides arguments so that timezone is enforced to utc
         if "timezone" in kwargs:
@@ -88,6 +94,10 @@ def boto3_stubber(mocker, boto3_stubber_path):
     mocked_client_factory.client.side_effect = lambda x, **kwargs: mocked_clients[x]
 
     def _boto3_stubber(service, mocked_requests):
+        if "AWS_DEFAULT_REGION" not in os.environ:
+            # We need to provide a region to boto3 to avoid no region exception.
+            # Which region to provide is arbitrary.
+            os.environ["AWS_DEFAULT_REGION"] = "us-east-1"
         client = boto3.client(service)
         stubber = Stubber(client)
         # Save a ref to the stubber so that we can deactivate it at the end of the test.
@@ -97,9 +107,17 @@ def boto3_stubber(mocker, boto3_stubber_path):
         if not isinstance(mocked_requests, list):
             mocked_requests = [mocked_requests]
         for mocked_request in mocked_requests:
-            stubber.add_response(
-                mocked_request.method, mocked_request.response, expected_params=mocked_request.expected_params
-            )
+            if mocked_request.generate_error:
+                stubber.add_client_error(
+                    mocked_request.method,
+                    service_message=mocked_request.response,
+                    expected_params=mocked_request.expected_params,
+                    service_error_code=mocked_request.error_code,
+                )
+            else:
+                stubber.add_response(
+                    mocked_request.method, mocked_request.response, expected_params=mocked_request.expected_params
+                )
         stubber.activate()
 
         # Add stubber to the collection of mocked clients. This allows to mock multiple clients.
@@ -129,7 +147,7 @@ DEFAULT_AWSBATCHCLICONFIG_MOCK_CONFIG = {
 @pytest.fixture()
 def awsbatchcliconfig_mock(request, mocker):
     """Mock AWSBatchCliConfig object with a default mock."""
-    module_under_test = request.module.__name__.replace("test_", "")
+    module_under_test = request.node.fspath.purebasename.replace("test_", "")
     mock = mocker.patch("awsbatch." + module_under_test + ".AWSBatchCliConfig", autospec=True)
     for key, value in DEFAULT_AWSBATCHCLICONFIG_MOCK_CONFIG.items():
         setattr(mock.return_value, key, value)
@@ -149,12 +167,10 @@ def pcluster_config_reader(test_datadir):
     The current renderer injects options for custom templates and packages in case these
     are passed to the cli and not present already in the cluster config.
     Also sanity_check is set to true by default unless explicitly set in config.
-
     :return: a _config_renderer(**kwargs) function which gets as input a dictionary of values to replace in the template
     """
-    config_file = "pcluster.config.ini"
 
-    def _config_renderer(**kwargs):
+    def _config_renderer(config_file="pcluster.config.ini", **kwargs):
         config_file_path = os.path.join(str(test_datadir), config_file)
         # default_values = _get_default_template_values(vpc_stacks, region, request)
         file_loader = FileSystemLoader(str(test_datadir))
